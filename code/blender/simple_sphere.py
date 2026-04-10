@@ -91,8 +91,8 @@ def setup_camera():
     cam_data = bpy.data.cameras.new(name="Camera")
     cam_obj = bpy.data.objects.new("Camera", cam_data)
     
-    cam_obj.location = (0, -8, 4)
-    cam_obj.rotation_euler = (1.0, 0, 0)
+    cam_obj.location = (0, -8, 3)
+    cam_obj.rotation_euler = (.9, 0, 0)
     
     bpy.context.scene.collection.objects.link(cam_obj)
     bpy.context.scene.camera = cam_obj
@@ -115,8 +115,8 @@ def setup_render_settings():
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
     scene.cycles.use_denoising = False
-    scene.render.resolution_x = 1000
-    scene.render.resolution_y = 800
+    scene.render.resolution_x = 100
+    scene.render.resolution_y = 80
     scene.render.filepath = "//glowing_sphere.png"
 
 
