@@ -5,6 +5,30 @@ def clear_scene():
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
 
+def setup_world_background():
+    """Set the world background to pure black (space-like dark)."""
+    world = bpy.context.scene.world
+    if world is None:
+        world = bpy.data.worlds.new("World")
+        bpy.context.scene.world = world
+    
+    world.use_nodes = True
+    nodes = world.node_tree.nodes
+    links = world.node_tree.links
+
+    # Clear existing nodes
+    for node in list(nodes):
+        nodes.remove(node)
+
+    # Create a simple black background
+    bg = nodes.new('ShaderNodeBackground')
+    bg.inputs['Color'].default_value = (0.0, 0.0, 0.0, 1.0)   # pure black
+    bg.inputs['Strength'].default_value = 1.0
+
+    output = nodes.new('ShaderNodeOutputWorld')
+
+    # Connect
+    links.new(bg.outputs['Background'], output.inputs['Surface'])
 
 def create_emissive_sphere():
     """Create a smooth sphere and turn it into an emissive (glowing) light source."""
@@ -101,6 +125,7 @@ def main():
     print("Starting scene setup...")
 
     clear_scene()
+    setup_world_background()
     create_emissive_sphere()
     setup_camera()
     #setup_sun_light()
