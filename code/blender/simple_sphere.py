@@ -216,8 +216,8 @@ def setup_camera():
     cam_obj = bpy.data.objects.new("Camera", cam_data)
     
     cam_obj.location = (1, -1, 1)
-    #cam_obj.rotation_euler = (math.radians(90), 0, 0)
-    look_at(cam_obj, (0, 10, 0))
+    cam_obj.rotation_euler = (math.radians(90), 0, 0)
+    #look_at(cam_obj, (0, 10, 0))
     
     bpy.context.scene.collection.objects.link(cam_obj)
     bpy.context.scene.camera = cam_obj
