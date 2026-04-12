@@ -1,3 +1,4 @@
+import os
 import bpy
 
 def clear_scene():
@@ -117,8 +118,12 @@ def setup_render_settings():
     scene.cycles.use_denoising = False
     scene.render.resolution_x = 100
     scene.render.resolution_y = 80
-    scene.render.filepath = "//glowing_sphere.png"
 
+    output_dir = os.path.join(os.environ.get('WORKDIR', '/tmp'), 'renders')
+    os.makedirs(output_dir, exist_ok=True)
+
+    scene.render.filepath = os.path.join(output_dir, 'glowing_sphere.png')
+    #scene.render.filepath = os.path.join('/tmp','glowing_sphere.png')
 
 def main():
     """Main function - orchestrates the entire scene creation and render."""
