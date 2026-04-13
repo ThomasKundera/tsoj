@@ -238,7 +238,8 @@ def setup_sun_light():
 def setup_render_settings():
     """Configure Cycles render settings (safe for Ubuntu apt version)."""
     scene = bpy.context.scene
-    scene.render.engine = 'CYCLES'
+    #scene.render.engine = 'CYCLES'
+    scene.render.engine = 'BLENDER_EEVEE'
     scene.cycles.use_denoising = False
     scene.render.resolution_x = 200
     scene.render.resolution_y = 160
