@@ -38,6 +38,11 @@ while read -r directory events filename; do
     echo "⏳ Waiting ${DEBOUNCE_SECONDS} seconds for more changes..."
     sleep "${DEBOUNCE_SECONDS}"
 
+    # Check if another render is already running
+    if [ -f "$LOCKFILE" ]; then
+        echo "⚠️  Another render is still running (lockfile exists). Skipping this trigger."
+        continue
+    fi
 
     # Acquire lock
     touch "$LOCKFILE"
@@ -54,3 +59,8 @@ while read -r directory events filename; do
     rm -f "$LOCKFILE"
     echo "🔓 Lock released. Ready for next change."
 done
+
+# Cleanup
+rm -f "$LOCKFILE"
+
+echo "✅ Auto-renderer stopped."
