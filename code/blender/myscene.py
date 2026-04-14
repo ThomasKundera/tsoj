@@ -43,16 +43,16 @@ def setup_sun_light():
     """Add a weak sun light so the sphere shape remains visible."""
     light_data = bpy.data.lights.new(name="Sun", type='SUN')
     light_obj = bpy.data.objects.new("Sun", light_data)
-    
+
     light_obj.location = (5, 5, 10)
     light_obj.rotation_euler = (1, 0, 0)
-    
+
     bpy.context.scene.collection.objects.link(light_obj)
     light_data.energy = 1.0   # keep it dim
 
 def create_emissive_material(hue: float = 0.1, strength: float = 5.0, name=None):
     """Create emissive material with custom hue.
-    
+
     hue: 0.0 = red, 0.1 = orange, 0.33 = yellow, 0.66 = blue, 0.8 = purple, etc.
     """
     if name is None:
@@ -90,7 +90,7 @@ def create_emissive_material(hue: float = 0.1, strength: float = 5.0, name=None)
 
 def create_emissive_sphere(loc=(0,0,0),r=1,hue=0.1):
     """Create sphere + apply smooth + subsurf + emissive material."""
-    
+
     # Create sphere
     bpy.ops.mesh.primitive_uv_sphere_add(
         segments=96,
@@ -98,7 +98,7 @@ def create_emissive_sphere(loc=(0,0,0),r=1,hue=0.1):
         radius=r,
         location=loc
     )
-    
+
     sphere = bpy.context.active_object
     sphere.name = "EmissiveSphere"
 
@@ -111,18 +111,18 @@ def create_emissive_sphere(loc=(0,0,0),r=1,hue=0.1):
     # Apply material
     mat = create_emissive_material(hue=hue)
     sphere.data.materials.append(mat)
-    
+
     return sphere
 
 
 def setup_render_stamp():
     """Configure clean timestamp stamp (hide filename and scene name)."""
     scene = bpy.context.scene
-    
+
     scene.render.use_stamp = True
     scene.render.use_stamp_date = True 
     scene.render.use_stamp_time = True
-    
+
     # Hide unwanted info
     scene.render.use_stamp_filename = False
     scene.render.use_stamp_scene = False
@@ -131,12 +131,12 @@ def setup_render_stamp():
     scene.render.use_stamp_camera = False
     scene.render.use_stamp_lens = False
     scene.render.use_stamp_marker = False
-    
+
     # Visual settings
-    scene.render.stamp_font_size = 12
+    scene.render.stamp_font_size = 7
     scene.render.stamp_foreground = (1.0, 1.0, 1.0, 1.0)
     scene.render.stamp_background = (0.0, 0.0, 0.0, 0.6)
-    
+
     print("✅ Clean stamp enabled")
 
 
@@ -174,13 +174,14 @@ def setup_render_quality(quality: int = 0):
 
     print(f"Render quality set to level {quality} ({scene.render.resolution_x}x{scene.render.resolution_y})")
 
+
 def setup_cycles_cpu(quality: int = 3):
     """Configure Cycles for heavy CPU rendering (good for 128 cores)."""
     scene = bpy.context.scene
-    
+
     scene.render.engine = 'CYCLES'
     scene.cycles.device = 'CPU'
-    
+
     # Quality based samples
     if quality <= 1:
         scene.cycles.samples = 16
@@ -191,12 +192,12 @@ def setup_cycles_cpu(quality: int = 3):
     else:  # high
         scene.cycles.samples = 128
         #scene.cycles.noise_threshold = 0.03
-    
+
     # Performance tweaks for many cores
     scene.cycles.max_bounces = 6
     scene.cycles.diffuse_bounces = 4
     scene.cycles.glossy_bounces = 4
-    
+
     print(f"✅ Cycles CPU enabled (quality {quality})")
 
 
@@ -204,7 +205,7 @@ def setup_render_settings():
     """Configure render engine, resolution, output path, etc."""
     #bpy.context.preferences.system.gpu_backend = 'OPENGL'
     scene = bpy.context.scene
-    
+
     scene.render.resolution_x = 200
     scene.render.resolution_y = 160
 
@@ -217,9 +218,11 @@ def setup_render_settings():
     # Engine
     # bpy.context.scene.render.engine = 'BLENDER_EEVEE'
     setup_cycles_cpu(quality=1)
-    
-    cores_available = mp.cpu_count()
-    scene.render.threads = cores_available
+    scene.render.threads_mode = 'AUTO'
+    #scene.render.threads_mode = 'FIXED'
+    #scene.render.threads = mp.cpu_count()//4
+
+    print(f"✅ Render settings set (threads: {scene.render.threads})")
 
 
 def setup_camera(name,camloc, target):
@@ -232,7 +235,7 @@ def setup_camera(name,camloc, target):
     # cam_data.lens = 85
 
     cam_obj = bpy.data.objects.new("Camera", cam_data)
-    
+
     cam_obj.location = camloc
     look_at(cam_obj,camloc,target)
 
@@ -246,55 +249,23 @@ def render_with_camera(name, location, target):
     """Render the scene with a specific camera position"""
     scene = bpy.context.scene
     cam_obj = setup_camera(name, location, target)
-    
+
     # Set output filename based on camera name
 
     # Output path
     output_dir = os.path.join(os.environ.get('WORKDIR', '/tmp'), 'renders')
     os.makedirs(output_dir, exist_ok=True)
-    
+
     scene = bpy.context.scene
     scene.render.filepath = os.path.join(output_dir, f"glowing_spheres_{name}.png")
-    
     print(f"Saving render to: {scene.render.filepath}")
-    bpy.ops.render.render(write_still=True)
-    
-    # Delete camera after render (clean up)
-    bpy.data.objects.remove(cam_obj, do_unlink=True)
 
+    print(f"→ Rendering {name} ...")
+    bpy.ops.render.render(write_still=True)
+    print(f"✓ Finished {name}")
 
 def render_view(view_name, cam_location, target):
     """Render one view in a separate Blender process."""
-    # Re-create the minimal scene inside each process
-    clear_scene()
-    setup_world_background()
-    create_emissive_sphere()
-    setup_render_settings(quality=2)   # adjust quality as needed
-    setup_render_stamp()
-
-    # Create camera for this view
-    cam_data = bpy.data.cameras.new(name=view_name)
-    cam_obj = bpy.data.objects.new(view_name, cam_data)
-    cam_obj.location = cam_location
-    bpy.context.view_layer.update()
-    look_at(cam_obj, target)
-
-    bpy.context.scene.collection.objects.link(cam_obj)
-    bpy.context.scene.camera = cam_obj
-
-    # Unique output filename
-    output_dir = os.path.join(os.environ.get('WORKDIR', '/tmp'), 'renders')
-    os.makedirs(output_dir, exist_ok=True)
-    bpy.context.scene.render.filepath = os.path.join(output_dir, f"glowing_sphere_{view_name}.png")
-
-    print(f"→ Rendering {view_name} ...")
-    bpy.ops.render.render(write_still=True)
-    print(f"✓ Finished {view_name}")
-
-
-def main():
-    """Main function - orchestrates the entire scene creation and render."""
-    print("Starting scene setup...")
 
     clear_scene()
     setup_world_background()
@@ -305,13 +276,26 @@ def main():
     for i in range(1,nmax+1):
         create_emissive_sphere(( 0    , 20*i*m,  0    ), 1.0*m, i/nmax)
         create_emissive_sphere(( 0    ,  0    , 20*i*m), 1.0*m, i/nmax)
-    #setup_camera()
     #setup_sun_light()
     setup_render_settings()
 
-    print("Rendering...")
-    render_with_camera("front",   (8*m, -9*m, 4*m), (1*m, 20*m, 2*m))
-    #bpy.ops.render.render(write_still=True)
+    render_with_camera(view_name, cam_location, target)
+
+
+def main():
+    """Main function - orchestrates the entire scene creation and render."""
+    views = [
+        #("front", ( 8*m, - 9*m,  4*m), (1*m, 20*m,  2*m)),
+        ("up"   , ( 12*m, -10*m,-20*m), (1*m,  1*m, 20*m)),
+    ]
+
+    #num_processes = min(8, len(views))   # Adjust: 8–16 is usually good on 128 cores
+    #with mp.Pool(processes=num_processes) as pool:
+    #    pool.starmap(render_view, views)
+
+    for view_name, cam_location, target in views:
+        render_view(view_name, cam_location, target)
+
     print("GPU Backend:", bpy.context.preferences.system.gpu_backend)
     print("Eevee TAA Samples:", bpy.context.scene.eevee.taa_render_samples)
     print("Raytracing enabled:", bpy.context.scene.eevee.use_raytracing)
