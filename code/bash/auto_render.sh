@@ -1,5 +1,6 @@
 #!/bin/bash
 # autorender.sh - Auto-run render.sh when any file in the "code" directory changes
+set -o noclobber   # or: set -C
 
 # Location of this script
 SCRIPTDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -21,32 +22,10 @@ echo "Watching: $WATCH_DIR (recursive)"
 echo "Will run: $RENDER_SCRIPT"
 echo "Press Ctrl+C to stop."
 
-# Main watcher loop
-inotifywait -m -r -q -e modify,create,move,close_write \
-  --exclude '\.(swp|swx|tmp|pyc|pyo)$|__pycache__' \
-  "$WATCH_DIR" | \
-while read -r directory events filename; do
-    echo "🔄 Change detected: $directory$filename"
-
-    # Check if another render is already running
-    if [ -f "$LOCKFILE" ]; then
-        echo "⚠️  Another render is still running (lockfile exists). Skipping this trigger."
-        continue
-    fi
-    
-    # Debounce: wait 2 seconds (any new changes during this time reset the timer)
+function do_render() {
+   # Debounce: wait 2 seconds (any new changes during this time reset the timer)
     echo "⏳ Waiting ${DEBOUNCE_SECONDS} seconds for more changes..."
     sleep "${DEBOUNCE_SECONDS}"
-
-    # Check if another render is already running
-    if [ -f "$LOCKFILE" ]; then
-        echo "⚠️  Another render is still running (lockfile exists). Skipping this trigger."
-        continue
-    fi
-
-    # Acquire lock
-    touch "$LOCKFILE"
-    echo "▶️  Starting render (lock acquired)..."
 
     # Run the render script
     if "$RENDER_SCRIPT"; then
@@ -58,6 +37,27 @@ while read -r directory events filename; do
     # Release lock
     rm -f "$LOCKFILE"
     echo "🔓 Lock released. Ready for next change."
+}
+
+# Main watcher loop
+inotifywait -m -r -q -e modify,create,move,close_write \
+  --exclude '\.(swp|swx|tmp|pyc|pyo)$|__pycache__' \
+  "$WATCH_DIR" | \
+while read -r directory events filename; do
+    echo "🔄 Change detected: $directory$filename"
+
+    # Check if another render is already running
+    if { > "$LOCKFILE"; } 2>/dev/null; then
+        echo "✅ Created lockfile ($LOCKFILE)"
+    else
+        echo "⚠️  Another render is still running (lockfile exists). Skipping this trigger."
+        continue
+    fi
+    echo "▶️  Starting render (lock acquired)..."
+
+    # Run the render script
+    do_render &
+
 done
 
 # Cleanup
