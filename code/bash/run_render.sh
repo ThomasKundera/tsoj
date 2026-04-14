@@ -18,6 +18,7 @@ mkdir -p $WORKDIR
 cd $WORKDIR
 
 echo "Working in $WORKDIR"
-blender --python-use-system-env -b -P $PROJECTDIR/code/blender/myscene.py
+/usr/bin/nice -20 blender --python-use-system-env -b -P $PROJECTDIR/code/blender/myscene.py
+#  -- --gpu-backend opengl
 
 echo "Done"
