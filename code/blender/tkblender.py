@@ -69,7 +69,7 @@ def add_axis_helpers(length=50.0, thickness=0.05, arrow_size=0.3, add_labels=Tru
         
         emission = nodes.new('ShaderNodeEmission')
         emission.inputs['Color'].default_value = color
-        emission.inputs['Strength'].default_value = 10.0
+        emission.inputs['Strength'].default_value = 1.0
         
         output = nodes.new('ShaderNodeOutputMaterial')
         mat.node_tree.links.new(emission.outputs['Emission'], output.inputs['Surface'])
