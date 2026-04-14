@@ -12,5 +12,5 @@ echo "Working in $WORKDIR"
 
 cd $WORKDIR
 
-blender -b -P $PROJECTDIR/code/blender/myscence.py
+blender -b -P $PROJECTDIR/code/blender/myscene.py
 
