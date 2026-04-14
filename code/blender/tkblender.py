@@ -12,7 +12,7 @@ def look_at(camera_obj, target):
     rot_quat = direction.to_track_quat('-Z', 'Y')   # Camera points -Z forward, +Y up
     camera_obj.rotation_euler = rot_quat.to_euler()
 
-def add_axis_helpers(length=5.0, thickness=0.05, arrow_size=0.3, add_labels=True):
+def add_axis_helpers(length=50.0, thickness=0.05, arrow_size=0.3, add_labels=True):
     """Add renderable X/Y/Z axis lines with arrowheads and optional text labels.
     
     Parameters:
