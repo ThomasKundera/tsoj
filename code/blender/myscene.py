@@ -1,6 +1,8 @@
 import os
+from multiprocessing import cpu_count
 import math
 from mathutils import Vector
+import colorsys
 import bpy
 
 from tkblender import add_axis_helpers, look_at,m
@@ -40,16 +42,16 @@ def setup_world_background():
 def setup_camera():
     """Create and position the camera."""
     cam_data = bpy.data.cameras.new(name="Camera")
+    camloc=(8*m, -9*m, 2*m)
     # FOV
-    cam_data.lens = 18
+    cam_data.lens = 30
     #cam_data.lens = 50       # default
     # cam_data.lens = 85
 
     cam_obj = bpy.data.objects.new("Camera", cam_data)
     
-    cam_obj.location = (6*m, -8*m, 6*m)
-    #cam_obj.rotation_euler = (math.radians(90), 0, 0)
-    look_at(cam_obj, (1*m, 2*m, 0))
+    cam_obj.location = camloc
+    look_at(cam_obj,camloc,(1*m, 20*m, 0*m))
 
     bpy.context.scene.collection.objects.link(cam_obj)
     bpy.context.scene.camera = cam_obj
@@ -66,9 +68,14 @@ def setup_sun_light():
     bpy.context.scene.collection.objects.link(light_obj)
     light_data.energy = 1.0   # keep it dim
 
+def create_emissive_material(hue: float = 0.1, strength: float = 5.0, name=None):
+    """Create emissive material with custom hue.
+    
+    hue: 0.0 = red, 0.1 = orange, 0.33 = yellow, 0.66 = blue, 0.8 = purple, etc.
+    """
+    if name is None:
+        name = f"Emissive_{int(hue*360):03d}"   # e.g. Emissive_036 for orange
 
-def create_emissive_material(name="EmissiveSphere"):
-    """Create and return the emissive material only."""
     mat = bpy.data.materials.new(name=name)
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
@@ -78,31 +85,28 @@ def create_emissive_material(name="EmissiveSphere"):
     for node in list(nodes):
         nodes.remove(node)
 
-    # Emission
+    # Emission node (the glow)
     emission = nodes.new('ShaderNodeEmission')
-    emission.inputs['Color'].default_value = (1.0, 0.6, 0.3, 1.0)
-    emission.inputs['Strength'].default_value = 5.0
+    emission.inputs['Color'].default_value = (*colorsys.hsv_to_rgb(hue, 0.95, 1.0), 1.0)
+    emission.inputs['Strength'].default_value = strength
 
-    # Diffuse
+    # Small diffuse for subtle surface
     diffuse = nodes.new('ShaderNodeBsdfDiffuse')
-    diffuse.inputs['Color'].default_value = (1.0, 0.7, 0.5, 1.0)
+    diffuse.inputs['Color'].default_value = (*colorsys.hsv_to_rgb(hue, 0.7, 0.9), 1.0)
 
-    # Mix
     mix = nodes.new('ShaderNodeMixShader')
     mix.inputs['Fac'].default_value = 0.15
 
-    # Output
     output = nodes.new('ShaderNodeOutputMaterial')
 
-    # Connect
+    # Connect nodes
     links.new(emission.outputs['Emission'], mix.inputs[1])
     links.new(diffuse.outputs['BSDF'], mix.inputs[2])
     links.new(mix.outputs['Shader'], output.inputs['Surface'])
 
     return mat
 
-
-def create_emissive_sphere(loc=(0,0,0),r=1):
+def create_emissive_sphere(loc=(0,0,0),r=1,hue=0.1):
     """Create sphere + apply smooth + subsurf + emissive material."""
     
     # Create sphere
@@ -123,21 +127,36 @@ def create_emissive_sphere(loc=(0,0,0),r=1):
     subsurf.render_levels = 3
 
     # Apply material
-    mat = create_emissive_material()
+    mat = create_emissive_material(hue=hue)
     sphere.data.materials.append(mat)
     
     return sphere
 
 
 def setup_render_stamp():
-    """Configure timestamp stamp (date/time) on the bottom of the image."""
+    """Configure clean timestamp stamp (hide filename and scene name)."""
     scene = bpy.context.scene
     
     scene.render.use_stamp = True
-    scene.render.use_stamp_date = True          # shows date + time
-    scene.render.stamp_font_size = 7
-    scene.render.stamp_foreground = (1.0, 1.0, 1.0, 1.0)   # white
-    scene.render.stamp_background = (0.0, 0.0, 0.0, 0.7)   # semi-transparent black
+    scene.render.use_stamp_date = True 
+    scene.render.use_stamp_time = True
+    
+    # Hide unwanted info
+    scene.render.use_stamp_filename = False
+    scene.render.use_stamp_scene = False
+    scene.render.use_stamp_render_time = True
+    scene.render.use_stamp_frame = False
+    scene.render.use_stamp_camera = False
+    scene.render.use_stamp_lens = False
+    scene.render.use_stamp_marker = False
+    
+    # Visual settings
+    scene.render.stamp_font_size = 12
+    scene.render.stamp_foreground = (1.0, 1.0, 1.0, 1.0)
+    scene.render.stamp_background = (0.0, 0.0, 0.0, 0.6)
+    
+    print("✅ Clean stamp enabled")
+
 
 def setup_render_quality(quality: int = 0):
     """Set render quality. 0 = very fast/low, 5 = high quality (HD)."""
@@ -223,6 +242,9 @@ def setup_render_settings():
     # Engine
     # bpy.context.scene.render.engine = 'BLENDER_EEVEE'
     setup_cycles_cpu(quality=1)
+    
+    cores_available = cpu_count()
+    scene.render.threads = cores_available
 
 
 def main():
@@ -232,8 +254,9 @@ def main():
     clear_scene()
     setup_world_background()
     add_axis_helpers(length=20*m)
-    for i in range(1,10):
-        create_emissive_sphere((0, 10*i*m, 0), 1.0*m)
+    nmax=20
+    for i in range(1,nmax+1):
+        create_emissive_sphere((0, 20*i*m, 0), 1.0*m, i/nmax)
     setup_camera()
     #setup_sun_light()
     setup_render_settings()

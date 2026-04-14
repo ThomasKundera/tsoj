@@ -5,12 +5,37 @@ import bpy
 # Units
 m=1
 
-def look_at(camera_obj, target):
-    """Make camera look at a target point (like POV-Ray look_at)."""
-    loc = camera_obj.matrix_world.to_translation()
-    direction = Vector(target) - loc
-    rot_quat = direction.to_track_quat('-Z', 'Y')   # Camera points -Z forward, +Y up
+from mathutils import Vector
+
+from mathutils import Vector
+
+from mathutils import Vector
+
+def look_at(camera_obj, camloc, target):
+    """Make camera look at a target point (POV-Ray style).
+    Fixed: properly handles looking down / up."""
+    
+    loc = camloc
+    direction = Vector(target) - Vector(loc)
+
+    print(f"Camera: {loc}, Target: {target}, Direction: {direction}")
+    
+    if direction.length < 1e-6:
+        print("Warning: Camera and target at same position")
+        return
+    
+    direction = direction.normalized()
+    
+    # Choose up axis dynamically to avoid flip when looking straight down/up
+    if abs(direction.z) > 0.98:        # nearly vertical
+        up_axis = 'Y'                  # use world Y as up
+    else:
+        up_axis = 'Y'                  # normal case: world Y as up (most stable)
+    
+    # Camera looks along -Z (Blender default)
+    rot_quat = direction.to_track_quat('-Z', up_axis)
     camera_obj.rotation_euler = rot_quat.to_euler()
+    
 
 def add_axis_helpers(length=50.0, thickness=0.05, arrow_size=0.3, add_labels=True):
     """Add renderable X/Y/Z axis lines with arrowheads and optional text labels.
