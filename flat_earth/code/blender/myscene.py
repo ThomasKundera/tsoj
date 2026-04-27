@@ -1,25 +1,18 @@
 import os
-import multiprocessing as mp
 import math
 from mathutils import Vector
-import colorsys
 import bpy
 
-from tkblender import add_axis_helpers, look_at,m
+from tkblender import add_axis_helpers, look_at,m, km
 
 def clear_scene():
     """Remove all objects from the current scene."""
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
 
-
 def setup_world_background():
-    """Set the world background to pure black (space-like dark)."""
-    world = bpy.context.scene.world
-    if world is None:
-        world = bpy.data.worlds.new("World")
-        bpy.context.scene.world = world
-    
+    world = bpy.context.scene.world or bpy.data.worlds.new("World")
+    bpy.context.scene.world = world
     world.use_nodes = True
     nodes = world.node_tree.nodes
     links = world.node_tree.links
@@ -30,7 +23,7 @@ def setup_world_background():
 
     # Create a simple black background
     bg = nodes.new('ShaderNodeBackground')
-    bg.inputs['Color'].default_value = (0.0, 0.0, 0.0, 1.0)   # pure black
+    bg.inputs['Color'].default_value = (0.0, 0.0, 0.05, 1.0)  # very dark blue instead of pure black
     bg.inputs['Strength'].default_value = 1.0
 
     output = nodes.new('ShaderNodeOutputWorld')
@@ -38,21 +31,67 @@ def setup_world_background():
     # Connect
     links.new(bg.outputs['Background'], output.inputs['Surface'])
 
-
 def create_ground_plane():
-    bpy.ops.mesh.primitive_plane_add(size=100.0, location=(0, 0, 0))
+    bpy.ops.mesh.primitive_plane_add(size=100.0 * 1000, location=(0, 0, 0))  # reduced from 100*km for testing
     ground = bpy.context.active_object
     ground.name = "Ground"
 
-    mat_ground = bpy.data.materials.new(name="Ground_Mat")
+    # Create material
+    mat_ground = bpy.data.materials.new(name="Ground_Checker_Mat")
     mat_ground.use_nodes = True
-    bsdf = mat_ground.node_tree.nodes["Principled BSDF"]
-    bsdf.inputs["Base Color"].default_value = (0.4, 0.3, 0.2, 1.0)  # earthy tone
-    bsdf.inputs["Roughness"].default_value = 0.9
-    ground.data.materials.append(mat_ground)
+    nodes = mat_ground.node_tree.nodes
+    links = mat_ground.node_tree.links
+    for node in list(nodes):
+        nodes.remove(node)
 
+    # Add nodes for checker texture
+    output = nodes.new("ShaderNodeOutputMaterial")
+    output.location = (600, 0)
+
+    principled = nodes.new("ShaderNodeBsdfPrincipled")
+    principled.inputs["Roughness"].default_value = 0.8
+
+    checker = nodes.new("ShaderNodeTexChecker")
+    checker.inputs["Scale"].default_value = 2000.0      # adjusted for better visibility
+    checker.inputs["Color1"].default_value = (0.4, 0.3, 0.2, 1.0)   # brown
+    checker.inputs["Color2"].default_value = (0.1, 0.3, 0.6, 1.0)   # blue
+
+    links.new(checker.outputs["Color"], principled.inputs["Base Color"])
+    links.new(principled.outputs["BSDF"], output.inputs["Surface"])
+
+    ground.data.materials.append(mat_ground)
     return ground
 
+
+def create_sun(location=(0, 0, 5000*km)):
+    # Visual sphere (emissive)
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=50*km, location=location)
+    sun_sphere = bpy.context.active_object
+    sun_sphere.name = "Sun_Sphere"
+
+    mat_sun = bpy.data.materials.new(name="Sun_Mat")
+    mat_sun.use_nodes = True
+    nodes = mat_sun.node_tree.nodes
+    for n in list(nodes):
+        nodes.remove(n)
+
+    emission = nodes.new('ShaderNodeEmission')
+    emission.inputs['Color'].default_value = (1.0, 0.95, 0.8, 1.0)
+    emission.inputs['Strength'].default_value = 100000.0   # ← MUCH STRONGER
+
+    output = nodes.new('ShaderNodeOutputMaterial')
+    links = mat_sun.node_tree.links
+    links.new(emission.outputs['Emission'], output.inputs['Surface'])
+    sun_sphere.data.materials.append(mat_sun)
+
+    # Strong point light (this actually lights the scene)
+    bpy.ops.object.light_add(type='POINT', location=location)
+    sun_light = bpy.context.active_object
+    sun_light.name = "Sun_Light"
+    sun_light.data.energy = 5000000.0          # ← Very strong
+    sun_light.data.shadow_soft_size = 50.0
+
+    return sun_sphere, sun_light
 
 def setup_render_stamp():
     """Configure clean timestamp stamp (hide filename and scene name)."""
@@ -170,9 +209,12 @@ def setup_camera(name,camloc, target):
     cam_data = bpy.data.cameras.new(name=name)
 
     # FOV
-    cam_data.lens = 30
+    cam_data.lens = 15
     #cam_data.lens = 50       # default
     # cam_data.lens = 85
+
+    cam_data.clip_start = 0.1*m
+    cam_data.clip_end = 10000*km
 
     cam_obj = bpy.data.objects.new("Camera", cam_data)
 
@@ -210,7 +252,7 @@ def render_view(view_name, cam_location, target):
     """Render one view in a separate Blender process."""
 
     clear_scene()
-    setup_world_background()
+    #setup_world_background()
     create_ground_plane()
     setup_render_settings()
 
@@ -220,7 +262,7 @@ def render_view(view_name, cam_location, target):
 def main():
     """Main function - orchestrates the entire scene creation and render."""
     views = [
-        ("front", ( 0*m, 0*m,  2*m), (10*m, 10*m,  10*m)),
+        ("front", ( 0*m, 0*m,  2*m), (10*m, 10*m,  0*m)),
     ]
 
     for view_name, cam_location, target in views:
