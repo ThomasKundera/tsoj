@@ -42,7 +42,7 @@ def create_shore():
 
 
 def create_ocean():
-    """Ocean for Blender 5.1.1 - Fixed node setup"""
+    """Improved ocean material for Blender 5.1.1 - Less grey, better water look"""
     
     bpy.ops.mesh.primitive_plane_add(size=400 * m, location=(0, 100 * m, -0.5 * m))
     ocean = bpy.context.active_object
@@ -50,16 +50,16 @@ def create_ocean():
 
     # Subdivision
     sub = ocean.modifiers.new(name="Subdivision", type='SUBSURF')
-    sub.levels = 5
+    sub.levels = 6
     sub.render_levels = 8
 
-    # Geometric displacement (wave height)
+    # Geometric displacement waves
     disp = ocean.modifiers.new(name="Ocean_Displace", type='DISPLACE')
     tex = bpy.data.textures.new("OceanWave", type='CLOUDS')
-    tex.noise_scale = 7.0
+    tex.noise_scale = 6.5
     tex.noise_depth = 4
     disp.texture = tex
-    disp.strength = 1.8 * m
+    disp.strength = 2.2 * m
     disp.mid_level = 0.5
 
     # ====================== WATER MATERIAL ======================
@@ -74,28 +74,37 @@ def create_ocean():
     output = nodes.new("ShaderNodeOutputMaterial")
     principled = nodes.new("ShaderNodeBsdfPrincipled")
 
-    output.location = (700, 0)
+    output.location = (800, 0)
     principled.location = (400, 0)
 
-    # Material settings
-    principled.inputs["Base Color"].default_value = (0.008, 0.035, 0.09, 1.0)
-    principled.inputs["Roughness"].default_value = 0.04
+    # === Core settings for nice looking water in Blender 5.1 ===
+    principled.inputs["Base Color"].default_value = (0.004, 0.018, 0.055, 1.0)   # Deep blue
+    principled.inputs["Roughness"].default_value = 0.025
     principled.inputs["Metallic"].default_value = 0.0
     principled.inputs["IOR"].default_value = 1.33
 
+    # Specular control
     if "Specular IOR Level" in principled.inputs:
-        principled.inputs["Specular IOR Level"].default_value = 0.85
+        principled.inputs["Specular IOR Level"].default_value = 0.92
 
+    # Transmission (correct name in 5.1)
     if "Transmission Weight" in principled.inputs:
-        principled.inputs["Transmission Weight"].default_value = 0.85
+        principled.inputs["Transmission Weight"].default_value = 0.88
 
     principled.inputs["Alpha"].default_value = 1.0
 
-    # === Normal map from Wave texture (Fixed for Blender 5.1) ===
+    # Sheen helps give water a bit more "wet" look
+    if "Sheen" in principled.inputs:
+        principled.inputs["Sheen"].default_value = 0.4
+    if "Sheen Tint" in principled.inputs:
+        #principled.inputs["Sheen Tint"].default_value = 0.7
+        pass
+
+    # === Normal map ripples (fixed for 5.1) ===
     tex_coord = nodes.new("ShaderNodeTexCoord")
     mapping = nodes.new("ShaderNodeMapping")
     wave = nodes.new("ShaderNodeTexWave")
-    vector_math = nodes.new("ShaderNodeVectorMath")   # Convert color → normal
+    vector_math = nodes.new("ShaderNodeVectorMath")
 
     tex_coord.location = (-800, 100)
     mapping.location = (-600, 100)
@@ -103,17 +112,17 @@ def create_ocean():
     vector_math.location = (-100, 100)
 
     vector_math.operation = 'MULTIPLY'
-    vector_math.inputs[1].default_value = (2.0, 2.0, 2.0)   # strength of ripples
+    vector_math.inputs[1].default_value = (1.8, 1.8, 1.8)
 
-    wave.inputs["Scale"].default_value = 18.0
-    wave.inputs["Distortion"].default_value = 2.5
+    wave.inputs["Scale"].default_value = 20.0
+    wave.inputs["Distortion"].default_value = 3.0
     wave.inputs["Detail"].default_value = 2.0
 
     # Connections
     links.new(tex_coord.outputs["Generated"], mapping.inputs["Vector"])
     links.new(mapping.outputs["Vector"], wave.inputs["Vector"])
-    links.new(wave.outputs["Color"], vector_math.inputs[0])           # Color → Vector Math
-    links.new(vector_math.outputs["Vector"], principled.inputs["Normal"])  # → Normal
+    links.new(wave.outputs["Color"], vector_math.inputs[0])
+    links.new(vector_math.outputs["Vector"], principled.inputs["Normal"])
 
     links.new(principled.outputs["BSDF"], output.inputs["Surface"])
 
@@ -161,18 +170,16 @@ def create_atmosphere():
     volume_obj.data.materials.append(mat)
     return volume_obj
 
+
 def create_sun():
-    """Strong SUN light for horizon lighting"""
-    bpy.ops.object.light_add(type='SUN', location=(0, 0, 200*m))
+    bpy.ops.object.light_add(type='SUN', location=(100*m, 100*m, 300*m))
     sun = bpy.context.active_object
     sun.name = "Sun_Light"
-
-    data = sun.data
-    data.energy = 12.0                    # Increase if too dark
-    data.angle = math.radians(0.8)        # Slight softness
-    data.color = (1.0, 0.96, 0.88)        # Warm sunlight
-
+    sun.data.energy = 1 
+    sun.data.angle = math.radians(1.5)
+    sun.data.color = (1.0, 0.96, 0.90)
     return sun
+
 
 def setup_camera():
     cam_data = bpy.data.cameras.new("Camera")
@@ -218,13 +225,21 @@ def setup_render_stamp():
 
 def setup_render():
     scene = bpy.context.scene
-    scene.render.engine = 'CYCLES'           # Better for volumetrics + realistic water
-    scene.cycles.samples = 128
-    scene.render.resolution_x = 1920//2
-    scene.render.resolution_y = 1080//2
-    setup_render_stamp()
+    scene.render.engine = 'CYCLES'
+    scene.cycles.samples = 10
+    scene.cycles.max_bounces = 12
+    scene.cycles.use_denoising = True
 
-    print("✅ Render settings set")
+    scene.render.resolution_x = 960
+    scene.render.resolution_y = 540
+
+    # Important for less dull look
+    scene.view_settings.view_transform = 'Filmic'
+    scene.view_settings.look = 'High Contrast'
+    scene.view_settings.exposure = 0.8          # brighten the image
+
+    setup_render_stamp()
+    print("✅ Render settings updated")
 
 
 # ====================== MAIN ======================
