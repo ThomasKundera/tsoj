@@ -18,7 +18,16 @@ mkdir -p $WORKDIR
 cd $WORKDIR
 
 echo "Working in $WORKDIR"
-/usr/bin/nice -20 blender --python-use-system-env -b -P $PROJECTDIR/code/blender/myscene.py
+rm -f $WORKDIR/blender.log
+# Redirecting logs to WORKDIR/blender.log
+/usr/bin/nice -20 blender --python-use-system-env -b -P $PROJECTDIR/code/blender/myscene.py 2>&1 | tee $WORKDIR/blender.log
 #  -- --gpu-backend opengl
 
-echo "Done"
+# Test if the render was successful from the log file
+if grep -q "Finished" $WORKDIR/blender.log; then
+    echo "✅ Render completed successfully."
+    exit 0
+else
+    echo "❌ Render failed or was interrupted."
+    exit 1
+fi
