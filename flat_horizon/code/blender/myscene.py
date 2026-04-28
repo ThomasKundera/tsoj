@@ -3,7 +3,7 @@ import bpy
 import math
 from mathutils import Vector
 
-m = 1.0  # your scale unit
+from tkblender import add_axis_helpers, look_at,m, km
 
 def clear_scene():
     bpy.ops.object.select_all(action='SELECT')
@@ -44,7 +44,7 @@ def create_shore():
 def create_ocean():
     """Improved ocean material for Blender 5.1.1 - Less grey, better water look"""
     
-    bpy.ops.mesh.primitive_plane_add(size=400 * m, location=(0, 100 * m, -0.5 * m))
+    bpy.ops.mesh.primitive_plane_add(size=10000 * m, location=(0, 100 * m, -0.5 * m))
     ocean = bpy.context.active_object
     ocean.name = "Ocean"
 
@@ -56,11 +56,11 @@ def create_ocean():
     # Geometric displacement waves
     disp = ocean.modifiers.new(name="Ocean_Displace", type='DISPLACE')
     tex = bpy.data.textures.new("OceanWave", type='CLOUDS')
-    tex.noise_scale = 6.5
+    tex.noise_scale = 6.5 * m
     tex.noise_depth = 4
     disp.texture = tex
     disp.strength = 2.2 * m
-    disp.mid_level = 0.5
+    disp.mid_level = 0.5 * m
 
     # ====================== WATER MATERIAL ======================
     mat = bpy.data.materials.new(name="Ocean_Mat")
@@ -114,9 +114,9 @@ def create_ocean():
     vector_math.operation = 'MULTIPLY'
     vector_math.inputs[1].default_value = (1.8, 1.8, 1.8)
 
-    wave.inputs["Scale"].default_value = 20.0
-    wave.inputs["Distortion"].default_value = 3.0
-    wave.inputs["Detail"].default_value = 2.0
+    wave.inputs["Scale"].default_value = 20.0 * m
+    wave.inputs["Distortion"].default_value = 3.0 * m
+    wave.inputs["Detail"].default_value = 2.0 * m
 
     # Connections
     links.new(tex_coord.outputs["Generated"], mapping.inputs["Vector"])
@@ -128,6 +128,44 @@ def create_ocean():
 
     ocean.data.materials.append(mat)
     return ocean
+
+
+def add_earth_curvature_to_ocean(ocean, earth_radius=6371000 * m):
+    """
+    Projects the ocean plane onto a sphere of Earth radius (6371 km).
+    This is the most accurate and clean way for large radii.
+    """
+    # High subdivision is required for smooth curvature
+    if "Subdivision" not in ocean.modifiers:
+        sub = ocean.modifiers.new(name="Subdivision", type='SUBSURF')
+    else:
+        sub = ocean.modifiers["Subdivision"]
+    
+    sub.levels = 7
+    sub.render_levels = 9
+
+    # Create invisible target sphere (very large)
+    bpy.ops.mesh.primitive_uv_sphere_add(
+        radius=earth_radius,
+        location=(0, 0, -earth_radius),   # Center the sphere far below the surface
+        segments=128,
+        ring_count=64
+    )
+    sphere = bpy.context.active_object
+    sphere.name = "Earth_Curvature_Target"
+    sphere.hide_viewport = True
+    sphere.hide_render = True
+
+    # Add Shrinkwrap modifier on the ocean
+    shrink = ocean.modifiers.new(name="Earth_Curvature", type='SHRINKWRAP')
+    shrink.target = sphere
+    shrink.wrap_method = 'PROJECT'
+    shrink.wrap_mode = 'ON_SURFACE'
+    shrink.project_axis = 'NEG_Z'        # Project downward onto the sphere
+    shrink.offset = 0.0
+
+    print(f"✅ Ocean curved onto Earth sphere (radius = {earth_radius/1000:.0f} km)")
+    return sphere
 
 
 def create_atmosphere():
@@ -172,27 +210,79 @@ def create_atmosphere():
 
 
 def create_sun():
-    bpy.ops.object.light_add(type='SUN', location=(100*m, 100*m, 300*m))
+    """Lower sun coming from the left side (good for dramatic horizon lighting)"""
+    
+    # Position: Far to the left and lower in the sky
+    # X = positive → left side (depending on your camera orientation)
+    # Z = lower height = sun closer to horizon
+    sun_location = (150 * m, -50 * m, 35 * m)        # ← Main change
+
+    bpy.ops.object.light_add(type='SUN', location=sun_location)
     sun = bpy.context.active_object
     sun.name = "Sun_Light"
-    sun.data.energy = 1 
-    sun.data.angle = math.radians(1.5)
-    sun.data.color = (1.0, 0.96, 0.90)
+
+    # Lighting settings
+    sun.data.energy = 4                           # Much stronger than 2.0
+    sun.data.angle = math.radians(2.0)               # Softer edges
+    sun.data.color = (1.0, 0.88, 0.65)               # Warmer, slightly golden color (good for low sun)
+
+    # Optional: Rotate the sun so light comes more from the side
+    sun.rotation_euler = (math.radians(40), 0, math.radians(30))
+
+    print(f"Sun placed at {sun_location} with energy {sun.data.energy}")
     return sun
+
+def create_vertical_bar(dfactor=1000 * m):
+    """Creates a vertical bar/pole away from the camera"""
+    # Position
+    bar_location = (dfactor/5, dfactor, 5 * m)      # Adjust X/Y if needed
+    
+    # Create a thin tall cylinder
+    bpy.ops.mesh.primitive_cylinder_add(
+        radius=1.2 * m,      # thickness of the bar
+        depth=25 * m,        # height of the bar
+        location=bar_location,
+        rotation=(0, 0, 0)
+    )
+
+    bar = bpy.context.active_object
+    bar.name = "Vertical_Bar"
+
+    # Simple dark material
+    mat = bpy.data.materials.new(name="Bar_Mat")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.08, 0.07, 0.06, 1.0)   # dark brownish/grey
+    bsdf.inputs["Roughness"].default_value = 0.7
+    bsdf.inputs["Metallic"].default_value = 0.0
+    
+    bar.data.materials.append(mat)
+
+    # Optional: Add a small base/platform so it doesn't look floating
+    bpy.ops.mesh.primitive_cube_add(
+        size=3*m,
+        location=(bar_location[0], bar_location[1], 0.4*m)
+    )
+    base = bpy.context.active_object
+    base.name = "Bar_Base"
+    base.data.materials.append(mat)
+
+    print(f"✅ Vertical bar added at {bar_location}")
+    return bar
 
 
 def setup_camera():
     cam_data = bpy.data.cameras.new("Camera")
     cam_obj = bpy.data.objects.new("Camera", cam_data)
-    cam_obj.location = (-30*m, -120*m, 8*m)      # On the shore, looking out to sea
+    cam_obj.location = (-30*m, -50*m, 8*m)      # On the shore, looking out to sea
 
     # Look toward horizon
     direction = Vector((20*m, 180*m, 5*m)) - cam_obj.location
     cam_obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
 
-    cam_data.lens = 50                       # Moderate focal length
+    cam_data.lens = 200
     cam_data.clip_start = 0.1
-    cam_data.clip_end = 2000*m
+    cam_data.clip_end = 20000*m
 
     bpy.context.scene.collection.objects.link(cam_obj)
     bpy.context.scene.camera = cam_obj
@@ -236,7 +326,7 @@ def setup_render():
     # Important for less dull look
     scene.view_settings.view_transform = 'Filmic'
     scene.view_settings.look = 'High Contrast'
-    scene.view_settings.exposure = 0.8          # brighten the image
+    scene.view_settings.exposure = 1.1          # brighten the image
 
     setup_render_stamp()
     print("✅ Render settings updated")
@@ -247,8 +337,12 @@ def main():
     clear_scene()
     setup_world()
     create_shore()
-    create_ocean()
-    create_atmosphere()
+    ocean = create_ocean()
+    #add_earth_curvature_to_ocean(ocean, earth_radius=6371000 * m)
+
+    #create_atmosphere()
+    for i in range(1,10):
+        create_vertical_bar(i*km)
     create_sun()
     setup_camera()
     setup_render()
