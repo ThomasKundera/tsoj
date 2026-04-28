@@ -1,0 +1,258 @@
+import os
+import bpy
+import math
+from mathutils import Vector
+
+m = 1.0  # your scale unit
+
+def clear_scene():
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete(use_global=False)
+
+def setup_world():
+    world = bpy.context.scene.world
+    if not world:
+        world = bpy.data.worlds.new("World")
+        bpy.context.scene.world = world
+    world.use_nodes = True
+    nodes = world.node_tree.nodes
+    for node in list(nodes):
+        nodes.remove(node)
+
+    bg = nodes.new('ShaderNodeBackground')
+    bg.inputs['Color'].default_value = (0.05, 0.08, 0.15, 1.0)   # deep blue sky
+    bg.inputs['Strength'].default_value = 1.0
+
+    output = nodes.new('ShaderNodeOutputWorld')
+    world.node_tree.links.new(bg.outputs['Background'], output.inputs['Surface'])
+
+def create_shore():
+    """Simple land strip near the camera"""
+    bpy.ops.mesh.primitive_plane_add(size=200*m, location=(0, -80*m, 0))
+    shore = bpy.context.active_object
+    shore.name = "Shore"
+
+    mat = bpy.data.materials.new(name="Shore_Mat")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.35, 0.30, 0.22, 1.0)  # sandy/beige
+    bsdf.inputs["Roughness"].default_value = 0.9
+    shore.data.materials.append(mat)
+    return shore
+
+
+def create_ocean():
+    """Ocean for Blender 5.1.1 - Fixed node setup"""
+    
+    bpy.ops.mesh.primitive_plane_add(size=400 * m, location=(0, 100 * m, -0.5 * m))
+    ocean = bpy.context.active_object
+    ocean.name = "Ocean"
+
+    # Subdivision
+    sub = ocean.modifiers.new(name="Subdivision", type='SUBSURF')
+    sub.levels = 5
+    sub.render_levels = 8
+
+    # Geometric displacement (wave height)
+    disp = ocean.modifiers.new(name="Ocean_Displace", type='DISPLACE')
+    tex = bpy.data.textures.new("OceanWave", type='CLOUDS')
+    tex.noise_scale = 7.0
+    tex.noise_depth = 4
+    disp.texture = tex
+    disp.strength = 1.8 * m
+    disp.mid_level = 0.5
+
+    # ====================== WATER MATERIAL ======================
+    mat = bpy.data.materials.new(name="Ocean_Mat")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+
+    for node in list(nodes):
+        nodes.remove(node)
+
+    output = nodes.new("ShaderNodeOutputMaterial")
+    principled = nodes.new("ShaderNodeBsdfPrincipled")
+
+    output.location = (700, 0)
+    principled.location = (400, 0)
+
+    # Material settings
+    principled.inputs["Base Color"].default_value = (0.008, 0.035, 0.09, 1.0)
+    principled.inputs["Roughness"].default_value = 0.04
+    principled.inputs["Metallic"].default_value = 0.0
+    principled.inputs["IOR"].default_value = 1.33
+
+    if "Specular IOR Level" in principled.inputs:
+        principled.inputs["Specular IOR Level"].default_value = 0.85
+
+    if "Transmission Weight" in principled.inputs:
+        principled.inputs["Transmission Weight"].default_value = 0.85
+
+    principled.inputs["Alpha"].default_value = 1.0
+
+    # === Normal map from Wave texture (Fixed for Blender 5.1) ===
+    tex_coord = nodes.new("ShaderNodeTexCoord")
+    mapping = nodes.new("ShaderNodeMapping")
+    wave = nodes.new("ShaderNodeTexWave")
+    vector_math = nodes.new("ShaderNodeVectorMath")   # Convert color → normal
+
+    tex_coord.location = (-800, 100)
+    mapping.location = (-600, 100)
+    wave.location = (-350, 100)
+    vector_math.location = (-100, 100)
+
+    vector_math.operation = 'MULTIPLY'
+    vector_math.inputs[1].default_value = (2.0, 2.0, 2.0)   # strength of ripples
+
+    wave.inputs["Scale"].default_value = 18.0
+    wave.inputs["Distortion"].default_value = 2.5
+    wave.inputs["Detail"].default_value = 2.0
+
+    # Connections
+    links.new(tex_coord.outputs["Generated"], mapping.inputs["Vector"])
+    links.new(mapping.outputs["Vector"], wave.inputs["Vector"])
+    links.new(wave.outputs["Color"], vector_math.inputs[0])           # Color → Vector Math
+    links.new(vector_math.outputs["Vector"], principled.inputs["Normal"])  # → Normal
+
+    links.new(principled.outputs["BSDF"], output.inputs["Surface"])
+
+    ocean.data.materials.append(mat)
+    return ocean
+
+
+def create_atmosphere():
+    """Simple volumetric atmosphere with absorption (tints distant objects)"""
+    # Large cube for volume
+    bpy.ops.mesh.primitive_cube_add(
+        size=500*m, 
+        location=(0, 50*m, 80*m), 
+        scale=(1, 1, 0.4)
+    )
+    volume_obj = bpy.context.active_object
+    volume_obj.name = "Atmosphere_Volume"
+
+    mat = bpy.data.materials.new(name="Atmosphere_Mat")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    for node in list(nodes):
+        nodes.remove(node)
+
+    output = nodes.new("ShaderNodeOutputMaterial")
+    volume_abs = nodes.new("ShaderNodeVolumeAbsorption")
+    volume_scat = nodes.new("ShaderNodeVolumeScatter")   # optional light scattering
+
+    volume_abs.inputs["Color"].default_value = (0.6, 0.75, 0.9, 1.0)   # bluish haze
+    volume_abs.inputs["Density"].default_value = 0.008   # ← Tune this (higher = more absorption)
+
+    volume_scat.inputs["Color"].default_value = (0.7, 0.85, 1.0, 1.0)
+    volume_scat.inputs["Density"].default_value = 0.004
+    volume_scat.inputs["Anisotropy"].default_value = 0.6
+
+    # Mix them
+    mix = nodes.new("ShaderNodeMixShader")
+    mix.inputs["Fac"].default_value = 0.6
+
+    links.new(volume_abs.outputs["Volume"], mix.inputs[1])
+    links.new(volume_scat.outputs["Volume"], mix.inputs[2])
+    links.new(mix.outputs["Shader"], output.inputs["Volume"])
+
+    volume_obj.data.materials.append(mat)
+    return volume_obj
+
+def create_sun():
+    """Strong SUN light for horizon lighting"""
+    bpy.ops.object.light_add(type='SUN', location=(0, 0, 200*m))
+    sun = bpy.context.active_object
+    sun.name = "Sun_Light"
+
+    data = sun.data
+    data.energy = 12.0                    # Increase if too dark
+    data.angle = math.radians(0.8)        # Slight softness
+    data.color = (1.0, 0.96, 0.88)        # Warm sunlight
+
+    return sun
+
+def setup_camera():
+    cam_data = bpy.data.cameras.new("Camera")
+    cam_obj = bpy.data.objects.new("Camera", cam_data)
+    cam_obj.location = (-30*m, -120*m, 8*m)      # On the shore, looking out to sea
+
+    # Look toward horizon
+    direction = Vector((20*m, 180*m, 5*m)) - cam_obj.location
+    cam_obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
+
+    cam_data.lens = 50                       # Moderate focal length
+    cam_data.clip_start = 0.1
+    cam_data.clip_end = 2000*m
+
+    bpy.context.scene.collection.objects.link(cam_obj)
+    bpy.context.scene.camera = cam_obj
+    return cam_obj
+
+def setup_render_stamp():
+    """Configure clean timestamp stamp (hide filename and scene name)."""
+    scene = bpy.context.scene
+
+    scene.render.use_stamp = True
+    scene.render.use_stamp_date = True 
+    scene.render.use_stamp_time = True
+
+    # Hide unwanted info
+    scene.render.use_stamp_filename = False
+    scene.render.use_stamp_scene = False
+    scene.render.use_stamp_render_time = True
+    scene.render.use_stamp_frame = False
+    scene.render.use_stamp_camera = False
+    scene.render.use_stamp_lens = False
+    scene.render.use_stamp_marker = False
+
+    # Visual settings
+    scene.render.stamp_font_size = 7
+    scene.render.stamp_foreground = (1.0, 1.0, 1.0, 1.0)
+    scene.render.stamp_background = (0.0, 0.0, 0.0, 0.6)
+
+    print("✅ Clean stamp enabled")
+
+
+def setup_render():
+    scene = bpy.context.scene
+    scene.render.engine = 'CYCLES'           # Better for volumetrics + realistic water
+    scene.cycles.samples = 128
+    scene.render.resolution_x = 1920//2
+    scene.render.resolution_y = 1080//2
+    setup_render_stamp()
+
+    print("✅ Render settings set")
+
+
+# ====================== MAIN ======================
+def main():
+    clear_scene()
+    setup_world()
+    create_shore()
+    create_ocean()
+    create_atmosphere()
+    create_sun()
+    setup_camera()
+    setup_render()
+
+    print("✅ Scene ready: Shore + Wavy Ocean + Atmosphere with Absorption")
+    print("   Tip: Increase Atmosphere density or SUN energy if needed.")
+
+    # Output path
+    output_dir = os.path.join(os.environ.get('WORKDIR', '/tmp'), 'renders')
+    os.makedirs(output_dir, exist_ok=True)
+
+    scene = bpy.context.scene
+    scene.render.filepath = os.path.join(output_dir, f"flat_horizon.png")
+    print(f"Saving render to: {scene.render.filepath}")
+
+    print(f"→ Rendering ...")
+    bpy.ops.render.render(write_still=True)
+    print(f"✓ Finished")
+
+
+if __name__ == "__main__":
+    main()
