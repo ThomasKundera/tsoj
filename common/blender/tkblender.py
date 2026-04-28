@@ -4,6 +4,7 @@ import bpy
 
 # Units
 m=1./10000 # 1 unit is 10 km
+#m=1
 km=1000.*m
 ua=149597870700*m
 

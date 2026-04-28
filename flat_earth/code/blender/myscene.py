@@ -31,8 +31,9 @@ def setup_world_background():
     # Connect
     links.new(bg.outputs['Background'], output.inputs['Surface'])
 
+
 def create_ground_plane():
-    bpy.ops.mesh.primitive_plane_add(size=100.0 * 1000, location=(0, 0, 0))  # reduced from 100*km for testing
+    bpy.ops.mesh.primitive_plane_add(size=300 * m, location=(0, 0, 0))
     ground = bpy.context.active_object
     ground.name = "Ground"
 
@@ -41,31 +42,51 @@ def create_ground_plane():
     mat_ground.use_nodes = True
     nodes = mat_ground.node_tree.nodes
     links = mat_ground.node_tree.links
+
+    # Clear default nodes
     for node in list(nodes):
         nodes.remove(node)
 
-    # Add nodes for checker texture
+    # Output node
     output = nodes.new("ShaderNodeOutputMaterial")
-    output.location = (600, 0)
 
+    # Principled BSDF
     principled = nodes.new("ShaderNodeBsdfPrincipled")
     principled.inputs["Roughness"].default_value = 0.8
 
+    # Checker Texture
     checker = nodes.new("ShaderNodeTexChecker")
-    checker.inputs["Scale"].default_value = 2000.0      # adjusted for better visibility
+    checker.inputs["Scale"].default_value = 20.0*m
     checker.inputs["Color1"].default_value = (0.4, 0.3, 0.2, 1.0)   # brown
     checker.inputs["Color2"].default_value = (0.1, 0.3, 0.6, 1.0)   # blue
 
+    # === IMPORTANT: Add Texture Coordinate node ===
+    tex_coord = nodes.new("ShaderNodeTexCoord")
+
+    # Connect UV (or Generated) to Checker Vector
+    links.new(tex_coord.outputs["UV"], checker.inputs["Vector"])   # Use "UV" for classic behavior
+    # Alternative: links.new(tex_coord.outputs["Generated"], checker.inputs["Vector"])
+
+    # Connect Checker Color → Principled Base Color
     links.new(checker.outputs["Color"], principled.inputs["Base Color"])
+
+    # Principled → Output
     links.new(principled.outputs["BSDF"], output.inputs["Surface"])
 
+    # Assign material
     ground.data.materials.append(mat_ground)
+
     return ground
 
 
-def create_sun(location=(0, 0, 5000*km)):
-    # Visual sphere (emissive)
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=50*km, location=location)
+def create_sun(location=(5*km, 5*km, 5*km),size=100*m):
+    """Create a bright glowing sun sphere + strong lighting for the scene."""
+    light_power=1000
+
+    sun_radius=100*m
+
+    # 1. Visual emissive sun sphere (the glowing ball you see)
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=sun_radius, location=location)
     sun_sphere = bpy.context.active_object
     sun_sphere.name = "Sun_Sphere"
 
@@ -76,22 +97,35 @@ def create_sun(location=(0, 0, 5000*km)):
         nodes.remove(n)
 
     emission = nodes.new('ShaderNodeEmission')
-    emission.inputs['Color'].default_value = (1.0, 0.95, 0.8, 1.0)
-    emission.inputs['Strength'].default_value = 100000.0   # ← MUCH STRONGER
+    emission.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+    emission.inputs['Strength'].default_value = light_power*10
 
     output = nodes.new('ShaderNodeOutputMaterial')
     links = mat_sun.node_tree.links
     links.new(emission.outputs['Emission'], output.inputs['Surface'])
     sun_sphere.data.materials.append(mat_sun)
 
-    # Strong point light (this actually lights the scene)
-    bpy.ops.object.light_add(type='POINT', location=location)
-    sun_light = bpy.context.active_object
-    sun_light.name = "Sun_Light"
-    sun_light.data.energy = 5000000.0          # ← Very strong
-    sun_light.data.shadow_soft_size = 50.0
+    # 2. Strong SUN light (best for realistic distant sun lighting + shadows)
+    #bpy.ops.object.light_add(type='SUN', location=location)
+    #sun_light = bpy.context.active_object
+    #sun_light.name = "Sun_Light"
 
-    return sun_sphere, sun_light
+    #light_data = sun_light.data
+    #light_data.energy = 5.0          # Start with 10–25. Increase if still dull
+    #light_data.angle = 0.0            # Sharp shadows (like a distant sun)
+    #light_data.use_shadow = True
+
+    # Optional: tint the sunlight slightly warm
+    #light_data.color = (1.0, 0.98, 0.92)
+
+    # 3. Optional helper Point light (only if you need extra fill near the sun)
+    bpy.ops.object.light_add(type='POINT', location=location)
+    point_light = bpy.context.active_object
+    point_light.data.energy = light_power*10
+    point_light.data.shadow_soft_size = sun_radius
+
+    return sun_sphere
+
 
 def setup_render_stamp():
     """Configure clean timestamp stamp (hide filename and scene name)."""
@@ -159,7 +193,7 @@ def setup_cycles_cpu(quality: int = 3):
 
     scene.render.engine = 'CYCLES'
     scene.cycles.device = 'CPU'
-
+    #scene.render.engine = 'BLENDER_EEVEE'
     # Quality based samples
     if quality <= 1:
         scene.cycles.samples = 16
@@ -191,7 +225,7 @@ def setup_render_settings():
     setup_render_stamp()
 
     # Quality
-    qual=1
+    qual=3
     setup_render_quality(quality=qual)
 
     # Engine
@@ -214,7 +248,7 @@ def setup_camera(name,camloc, target):
     # cam_data.lens = 85
 
     cam_data.clip_start = 0.1*m
-    cam_data.clip_end = 10000*km
+    cam_data.clip_end = 1000*km
 
     cam_obj = bpy.data.objects.new("Camera", cam_data)
 
@@ -251,9 +285,12 @@ def render_with_camera(name, location, target):
 def render_view(view_name, cam_location, target):
     """Render one view in a separate Blender process."""
 
+    sun_loc=(10*km, 10*km, 2*km)
+    sun_size=1*km
     clear_scene()
     #setup_world_background()
     create_ground_plane()
+    create_sun(location=sun_loc,size=sun_size)
     setup_render_settings()
 
     render_with_camera(view_name, cam_location, target)
@@ -262,7 +299,7 @@ def render_view(view_name, cam_location, target):
 def main():
     """Main function - orchestrates the entire scene creation and render."""
     views = [
-        ("front", ( 0*m, 0*m,  2*m), (10*m, 10*m,  0*m)),
+        ("front", ( 0*m, 0*m,  5*m), (10*m, 10*m,  5*m)),
     ]
 
     for view_name, cam_location, target in views:
