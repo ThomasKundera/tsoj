@@ -1,6 +1,7 @@
 import os
 import bpy
 import math
+import random
 from mathutils import Vector
 
 from tkblender import add_axis_helpers, look_at,cm, m, km
@@ -54,7 +55,7 @@ def create_barbed_wire():
     
     wire_length = 120 * m
     wire_height = 8 * m
-    wire_y = 20 * m
+    wire_y = 30 * m
     
     # 1. Create the main wire (thin cylinder)
     bpy.ops.curve.primitive_bezier_curve_add(location=(0, wire_y, wire_height))
@@ -81,17 +82,27 @@ def create_barbed_wire():
         verts[-1].co.z -= 0.15 * m
     
     # 2. Create barbs (sharp spikes)
-    barb_group_count    = 2        # number of barbs in a group
-    barb_group_distance = 4 * m    # distance between barbs
+    barb_group_count    = 6        # number of barbs in a group
+    barb_group_distance = 12 * m    # distance between barbs
     barb_size           = 35 * cm  # size of each barb
     
+    # === 2. Barb template - Cone with origin at BASE ===
     bpy.ops.mesh.primitive_cone_add(
-        vertices=4, radius1=0.08*m, depth=barb_size, 
-        location=(0, 0, 0), rotation=(0, math.radians(90), 0)
+        vertices=4,
+        radius1=barb_size/4,
+        depth=barb_size,
+        location=(0, 0, 0),
+        rotation=(math.radians(90), 0, 0)   # points along +Y initially
     )
     barb_template = bpy.context.active_object
     barb_template.name = "Barb_Template"
-    
+
+    # Move origin to the base of the cone (the flat part that touches the wire)
+    bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_VOLUME', center='BOUNDS')
+    # Shift the geometry so the base is now at the origin
+    for vert in barb_template.data.vertices:
+        vert.co.z += barb_size/2
+
     # Material for wire + barbs (same dark metal)
     mat = bpy.data.materials.new(name="Barbed_Wire_Mat")
     mat.use_nodes = True
@@ -119,20 +130,26 @@ def create_barbed_wire():
     barb_template.data.materials.append(mat)
     
     # Duplicate barbs along the wire
-    for i in range(round(wire_length / barb_group_distance)):
-        for j in range(barb_group_count):
-            x_pos = -wire_length/2 + i * barb_group_distance +  j * barb_size / 2
+
+    for i in range(round(wire_length / barb_group_distance) + 1):
+        for k in range(3):
+            for j in range(barb_group_count):
+                x_pos = -wire_length/2 + i * barb_group_distance + j * barb_size / 2 + k * barb_size * barb_group_count*.8
+                
+                barb = barb_template.copy()
+                barb.data = barb_template.data.copy()
+                bpy.context.collection.objects.link(barb)
+                
+                # Position at the wire
+                barb.location = (x_pos, wire_y, wire_height)
             
-            # Create copy of barb
-            barb = barb_template.copy()
-            barb.data = barb_template.data.copy()
-            bpy.context.collection.objects.link(barb)
+                # 2. Rotate so the barb points outward (perpendicular to the wire)
+                # Since the wire runs along X, we rotate around local X to splay outward
+                barb.rotation_euler = (
+                    math.radians((j+k)*360/barb_group_count)+math.radians(random.uniform(-15, 15)),
+                    math.radians(random.uniform(-15, 15)),
+                    math.radians(random.uniform(-15, 15)))
             
-            # Place along the wire with random small variation
-            barb.location = (x_pos, wire_y, wire_height + barb_size/2)
-            barb.rotation_euler = (math.radians(0), math.radians(j*360/barb_group_count), math.radians(i * 137))  # twisted look
-            barb.scale = (1.0, 1.0, 0.9 + 0.2 * (i % 3))   # slight size variation
-        
     # Delete the template
     #bpy.data.objects.remove(barb_template, do_unlink=True)
     
