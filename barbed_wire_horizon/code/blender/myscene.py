@@ -50,12 +50,12 @@ def create_sun():
     print(f"Sun placed at {sun_location} with energy {sun.data.energy}")
     return sun
 
-def create_barbed_wire():
+def create_barbed_wire(distance=30 * m):
     """Creates a single horizontal barbed wire with visible barbs"""
     
     wire_length = 120 * m
-    wire_height = 8 * m
-    wire_y = 30 * m
+    wire_height = 0 * m
+    wire_y = distance
     
     # 1. Create the main wire (thin cylinder)
     bpy.ops.curve.primitive_bezier_curve_add(location=(0, wire_y, wire_height))
@@ -130,18 +130,18 @@ def create_barbed_wire():
     barb_template.data.materials.append(mat)
     
     # Duplicate barbs along the wire
-
+    offset = random.uniform(-barb_group_distance, barb_group_distance)
     for i in range(round(wire_length / barb_group_distance) + 1):
         for k in range(3):
             for j in range(barb_group_count):
-                x_pos = -wire_length/2 + i * barb_group_distance + j * barb_size / 2 + k * barb_size * barb_group_count*.8
+                x_pos = offset-wire_length/2 + i * barb_group_distance + j * barb_size / 2 + k * barb_size * barb_group_count*.8
                 
                 barb = barb_template.copy()
                 barb.data = barb_template.data.copy()
                 bpy.context.collection.objects.link(barb)
                 
                 # Position at the wire
-                barb.location = (x_pos, wire_y, wire_height)
+                barb.location = (x_pos, wire_y, wire_height+barb_size/2)
             
                 # 2. Rotate so the barb points outward (perpendicular to the wire)
                 # Since the wire runs along X, we rotate around local X to splay outward
@@ -233,8 +233,10 @@ def main():
     setup_world()
 
     create_sun()
-    create_barbed_wire()
-
+    for i in range(100):
+        for j in range(4):
+            create_barbed_wire(i*40*m+j*3*m)
+        create_barbed_wire(i*10*m)
     setup_camera()
     setup_render()
 
