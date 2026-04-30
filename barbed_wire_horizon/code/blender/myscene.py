@@ -50,67 +50,102 @@ def create_sun():
     return sun
 
 def create_barbed_wire():
-    """Creates a single horizontal barbed wire strand across the scene"""
+    """Creates a single horizontal barbed wire with visible barbs"""
     
     wire_length = 120 * m
     wire_height = 8 * m
-    wire_y = 10 * m
+    wire_y = 20 * m
     
-    # Create straight curve
+    # 1. Create the main wire (thin cylinder)
     bpy.ops.curve.primitive_bezier_curve_add(location=(0, wire_y, wire_height))
     wire = bpy.context.active_object
     wire.name = "Barbed_Wire"
     
-    # Make it long and straight
     spline = wire.data.splines[0]
     spline.bezier_points[0].co = (-wire_length/2, 0, 0)
     spline.bezier_points[1].co = ( wire_length/2, 0, 0)
     
-    # Convert to mesh
     bpy.ops.object.convert(target='MESH')
     
-    # Add Skin modifier for thickness
+    # Skin modifier for thin wire
     skin_mod = wire.modifiers.new(name="Skin", type='SKIN')
     skin_mod.branch_smoothing = 0.0
-    
-    # Set wire thickness
     skin_layer = wire.data.skin_vertices[0]
     for skin_vert in skin_layer.data:
-        skin_vert.radius = (5*cm,5*cm)   # ~1.2 cm thick
+        skin_vert.radius = (5*cm, 5*cm)   # thinner wire (~8mm)
     
-    # Slight sag at the ends for realism
+    # Slight sag
     verts = wire.data.vertices
     if len(verts) >= 2:
-        verts[0].co.z -= 0.12 * m
-        verts[-1].co.z -= 0.12 * m
+        verts[0].co.z -= 0.15 * m
+        verts[-1].co.z -= 0.15 * m
     
-    # === Material ===
+    # 2. Create barbs (sharp spikes)
+    barb_group_count    = 2        # number of barbs in a group
+    barb_group_distance = 4 * m    # distance between barbs
+    barb_size           = 35 * cm  # size of each barb
+    
+    bpy.ops.mesh.primitive_cone_add(
+        vertices=4, radius1=0.08*m, depth=barb_size, 
+        location=(0, 0, 0), rotation=(0, math.radians(90), 0)
+    )
+    barb_template = bpy.context.active_object
+    barb_template.name = "Barb_Template"
+    
+    # Material for wire + barbs (same dark metal)
     mat = bpy.data.materials.new(name="Barbed_Wire_Mat")
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
-    for node in list(nodes):
-        nodes.remove(node)
+    for n in list(nodes):
+        nodes.remove(n)
 
     bsdf = nodes.new('ShaderNodeBsdfPrincipled')
-    
     bsdf.inputs['Base Color'].default_value = (0.07, 0.075, 0.08, 1.0)
-    bsdf.inputs['Metallic'].default_value = 0.92
-    bsdf.inputs['Roughness'].default_value = 0.48
+    bsdf.inputs['Metallic'].default_value = 0.9
+    bsdf.inputs['Roughness'].default_value = 0.45
     
-    # Safe way to set specular reflection (works in Blender 4.2 → 5.1)
+    # Safe specular handling for Blender 5.1
     if 'Specular IOR Level' in bsdf.inputs:
-        bsdf.inputs['Specular IOR Level'].default_value = 0.6
+        bsdf.inputs['Specular IOR Level'].default_value = 0.65
     elif 'IOR Level' in bsdf.inputs:
-        bsdf.inputs['IOR Level'].default_value = 0.6
+        bsdf.inputs['IOR Level'].default_value = 0.65
     elif 'Specular' in bsdf.inputs:
         bsdf.inputs['Specular'].default_value = 0.5
 
     output = nodes.new('ShaderNodeOutputMaterial')
     mat.node_tree.links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-
+    
     wire.data.materials.append(mat)
-
-    print(f"✅ Barbed wire created at height {wire_height/m:.1f}m")
+    barb_template.data.materials.append(mat)
+    
+    # Duplicate barbs along the wire
+    for i in range(round(wire_length / barb_group_distance)):
+        for j in range(barb_group_count):
+            x_pos = -wire_length/2 + i * barb_group_distance +  j * barb_size / 2
+            
+            # Create copy of barb
+            barb = barb_template.copy()
+            barb.data = barb_template.data.copy()
+            bpy.context.collection.objects.link(barb)
+            
+            # Place along the wire with random small variation
+            barb.location = (x_pos, wire_y, wire_height + barb_size/2)
+            barb.rotation_euler = (math.radians(0), math.radians(j*360/barb_group_count), math.radians(i * 137))  # twisted look
+            barb.scale = (1.0, 1.0, 0.9 + 0.2 * (i % 3))   # slight size variation
+        
+    # Delete the template
+    #bpy.data.objects.remove(barb_template, do_unlink=True)
+    
+    # Join all barbs to the main wire (optional but cleaner)
+    #bpy.ops.object.select_all(action='DESELECT')
+    #wire.select_set(True)
+    #for obj in bpy.data.objects:
+    #    if obj.name.startswith("Barb") or "Barb_Template" in obj.name:
+    #        obj.select_set(True)
+    #bpy.context.view_layer.objects.active = wire
+    #bpy.ops.object.join()
+ 
+    #print(f"✅ Barbed wire with {barb_count} barbs created at height {wire_height/m:.1f}m")
     return wire
 
 
