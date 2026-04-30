@@ -132,39 +132,45 @@ def create_ocean():
 
 def add_earth_curvature_to_ocean(ocean, earth_radius=6371000 * m):
     """
-    Projects the ocean plane onto a sphere of Earth radius (6371 km).
-    This is the most accurate and clean way for large radii.
+    Projects the ocean onto a sphere with Earth radius (6371 km).
+    Fixed for Blender 5.1.1
     """
-    # High subdivision is required for smooth curvature
-    if "Subdivision" not in ocean.modifiers:
+    # High subdivision needed for smooth curve
+    if "Subdivision" not in [mod.name for mod in ocean.modifiers]:
         sub = ocean.modifiers.new(name="Subdivision", type='SUBSURF')
     else:
         sub = ocean.modifiers["Subdivision"]
     
     sub.levels = 7
     sub.render_levels = 9
+    sub.use_creases = True
 
-    # Create invisible target sphere (very large)
+    # Create invisible target sphere (center far below)
     bpy.ops.mesh.primitive_uv_sphere_add(
         radius=earth_radius,
-        location=(0, 0, -earth_radius),   # Center the sphere far below the surface
-        segments=128,
-        ring_count=64
+        location=(0, 0, -earth_radius),     # Sphere center
+        segments=96,
+        ring_count=48
     )
     sphere = bpy.context.active_object
     sphere.name = "Earth_Curvature_Target"
     sphere.hide_viewport = True
     sphere.hide_render = True
 
-    # Add Shrinkwrap modifier on the ocean
+    # Shrinkwrap modifier - Fixed for Blender 5.1
     shrink = ocean.modifiers.new(name="Earth_Curvature", type='SHRINKWRAP')
     shrink.target = sphere
-    shrink.wrap_method = 'PROJECT'
+    shrink.wrap_method = 'PROJECT'           # Project method
     shrink.wrap_mode = 'ON_SURFACE'
-    shrink.project_axis = 'NEG_Z'        # Project downward onto the sphere
     shrink.offset = 0.0
 
-    print(f"✅ Ocean curved onto Earth sphere (radius = {earth_radius/1000:.0f} km)")
+    # In Blender 5.1 we use project_axis_space instead of project_axis
+    if hasattr(shrink, "project_axis_space"):
+        shrink.project_axis_space = 'NEG_Z'      # Project downward
+    elif hasattr(shrink, "project_axis"):
+        shrink.project_axis = 'NEG_Z'
+
+    print(f"✅ Ocean curved to Earth radius: {earth_radius/1000:.0f} km")
     return sphere
 
 
@@ -338,6 +344,7 @@ def main():
     setup_world()
     create_shore()
     ocean = create_ocean()
+
     #add_earth_curvature_to_ocean(ocean, earth_radius=6371000 * m)
 
     #create_atmosphere()
