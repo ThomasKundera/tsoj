@@ -50,10 +50,10 @@ def create_sun():
     print(f"Sun placed at {sun_location} with energy {sun.data.energy}")
     return sun
 
-def create_barbed_wire(distance=30 * m):
+def create_barbed_wire(distance=30 * m, length=120 * m):
     """Creates a single horizontal barbed wire with visible barbs"""
     
-    wire_length = 120 * m
+    wire_length = length
     wire_height = 0 * m
     wire_y = distance
     
@@ -235,8 +235,8 @@ def main():
     create_sun()
     for i in range(100):
         for j in range(4):
-            create_barbed_wire(i*40*m+j*3*m)
-        create_barbed_wire(i*10*m)
+            d=i*40*m+j*3*m
+            create_barbed_wire(distance=d, length=d)
     setup_camera()
     setup_render()
 
