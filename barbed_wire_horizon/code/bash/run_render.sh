@@ -20,8 +20,10 @@ cd $WORKDIR
 echo "Working in $WORKDIR"
 rm -f $WORKDIR/blender.log
 # Redirecting logs to WORKDIR/blender.log
+echo "Starting render at $(date)"
 /usr/bin/nice -20 blender --python-use-system-env -b -P $PROJECTDIR/code/blender/myscene.py 2>&1 | tee $WORKDIR/blender.log
 #  -- --gpu-backend opengl
+echo "Finished render at $(date)"
 
 # Test if the render was successful from the log file
 if grep -q "Finished" $WORKDIR/blender.log; then
