@@ -50,7 +50,7 @@ while read -r directory events filename; do
     if { > "$LOCKFILE"; } 2>/dev/null; then
         echo "✅ Created lockfile ($LOCKFILE)"
     else
-        echo "⚠️  Another render is still running (lockfile exists). Skipping this trigger."
+        echo "⚠️  Another render is still running (lockfile $LOCKFILE exists). Skipping this trigger."
         continue
     fi
     echo "▶️  Starting render (lock acquired)..."
