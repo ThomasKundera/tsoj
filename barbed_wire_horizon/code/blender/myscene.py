@@ -262,7 +262,7 @@ def main():
 
     for i in range(num_wire_groups):
         for j in range(num_wires_per_group):
-            d=i*wire_group_step+j*3*m
+            d=i*wire_group_step+j*3*m+10*m
             create_barbed_wire(distance=d, length=d)
 
     setup_camera()
