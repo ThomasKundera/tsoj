@@ -6,6 +6,8 @@ from mathutils import Vector
 
 from tkblender import add_axis_helpers, look_at,cm, m, km
 
+DEV_MODE = True
+
 def clear_scene():
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
@@ -52,40 +54,48 @@ def create_sun():
 
 def create_barbed_wire(distance=30 * m, length=120 * m):
     """Creates a single horizontal barbed wire with visible barbs"""
-    
+
     wire_length = length
     wire_height = 0 * m
     wire_y = distance
-    
+
     # 1. Create the main wire (thin cylinder)
     bpy.ops.curve.primitive_bezier_curve_add(location=(0, wire_y, wire_height))
     wire = bpy.context.active_object
     wire.name = "Barbed_Wire"
-    
+
     spline = wire.data.splines[0]
     spline.bezier_points[0].co = (-wire_length/2, 0, 0)
     spline.bezier_points[1].co = ( wire_length/2, 0, 0)
-    
+
     bpy.ops.object.convert(target='MESH')
-    
+
     # Skin modifier for thin wire
     skin_mod = wire.modifiers.new(name="Skin", type='SKIN')
     skin_mod.branch_smoothing = 0.0
     skin_layer = wire.data.skin_vertices[0]
     for skin_vert in skin_layer.data:
         skin_vert.radius = (5*cm, 5*cm)   # thinner wire (~8mm)
-    
+
     # Slight sag
     verts = wire.data.vertices
     if len(verts) >= 2:
         verts[0].co.z -= 0.15 * m
         verts[-1].co.z -= 0.15 * m
-    
+
     # 2. Create barbs (sharp spikes)
+    if DEV_MODE:
+        barb_group_count = 2
+        barb_group_distance = 25 * m
+        # Maybe even skip barbs entirely sometimes
+    else:
+        barb_group_count = 6
+        barb_group_distance = 12 * m
+
     barb_group_count    = 6        # number of barbs in a group
     barb_group_distance = 12 * m    # distance between barbs
     barb_size           = 35 * cm  # size of each barb
-    
+
     # === 2. Barb template - Cone with origin at BASE ===
     bpy.ops.mesh.primitive_cone_add(
         vertices=4,
@@ -114,7 +124,7 @@ def create_barbed_wire(distance=30 * m, length=120 * m):
     bsdf.inputs['Base Color'].default_value = (0.07, 0.075, 0.08, 1.0)
     bsdf.inputs['Metallic'].default_value = 0.9
     bsdf.inputs['Roughness'].default_value = 0.45
-    
+
     # Safe specular handling for Blender 5.1
     if 'Specular IOR Level' in bsdf.inputs:
         bsdf.inputs['Specular IOR Level'].default_value = 0.65
@@ -207,13 +217,19 @@ def setup_render_stamp():
 
     print("✅ Clean stamp enabled")
 
-
 def setup_render():
     scene = bpy.context.scene
-    scene.render.engine = 'CYCLES'
-    scene.cycles.samples = 10
-    scene.cycles.max_bounces = 12
-    scene.cycles.use_denoising = True
+    if DEV_MODE:
+        scene.render.engine = 'BLENDER_EEVEE'
+        scene.eevee.taa_render_samples = 4      # or even 1-2
+        #scene.eevee.use_bloom = False
+        #scene.eevee.use_ssr = False
+        print("⚡ DEV MODE: Using Eevee")
+    else:
+        scene.render.engine = 'CYCLES'
+        scene.cycles.samples = 10
+        scene.cycles.max_bounces = 12
+        scene.cycles.use_denoising = True
 
     scene.render.resolution_x = 960
     scene.render.resolution_y = 540
@@ -233,10 +249,22 @@ def main():
     setup_world()
 
     create_sun()
-    for i in range(100):
-        for j in range(4):
-            d=i*40*m+j*3*m
+
+    if DEV_MODE:
+        num_wire_groups = 12
+        num_wires_per_group = 1
+    else:
+        num_wire_groups = 100
+        num_wires_per_group = 4
+
+    max_distance = 4 * km
+    wire_group_step = max_distance / num_wire_groups
+
+    for i in range(num_wire_groups):
+        for j in range(num_wires_per_group):
+            d=i*wire_group_step+j*3*m
             create_barbed_wire(distance=d, length=d)
+
     setup_camera()
     setup_render()
 
